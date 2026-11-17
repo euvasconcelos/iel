@@ -1,0 +1,24 @@
+{
+  "titulo": "Reunião comercial de 10/11/2026",
+  "resumo": "Foi apresentada queda de 8% nas vendas online em outubro. A equipe decidiu pausar a campanha de cupons até revisar os custos. Foram definidas ações para levantar o custo por aquisição e propor novo layout de checkout.",
+  "decisoes": [
+    "Pausar a campanha de cupons até a revisão dos custos."
+  ],
+  "tarefas": [
+    {
+      "descricao": "Levantar o custo por aquisição",
+      "responsavel": "Bruno",
+      "prazo": "2026-11-13",
+      "prioridade": "não informado"
+    },
+    {
+      "descricao": "Propor novo layout da página de checkout",
+      "responsavel": "Carla",
+      "prazo": "não informado",
+      "prioridade": "não informado"
+    }
+  ],
+  "riscos": [
+    "Atraso na integração com o gateway de pagamento."
+  ]
+}

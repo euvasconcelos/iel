@@ -1,0 +1,494 @@
+{
+  "name": "RAG de treinamentos: ingestão",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "triggerOn": "specificFolder",
+        "folderToWatch": {
+          "__rl": true,
+          "mode": "id",
+          "value": "ID_DA_PASTA_TREINAMENTOS"
+        },
+        "event": "fileCreated",
+        "options": {}
+      },
+      "id": "4a62a237-99ff-425d-952a-582e1d06d344",
+      "name": "Novo vídeo na pasta Treinamentos",
+      "type": "n8n-nodes-base.googleDriveTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        304
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "CONFIGURAR",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ Number($json.size) }}",
+              "operator": {
+                "type": "number",
+                "operation": "lte"
+              },
+              "rightValue": 25000000
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b25e752f-8164-445e-8d52-46c06480098f",
+      "name": "Arquivo até 25 MB?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        464,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.id }}"
+        },
+        "options": {}
+      },
+      "id": "aa706e4b-e2cf-4c7e-ab42-b71c9b6bdb8d",
+      "name": "Baixar vídeo",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        704,
+        208
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "CONFIGURAR",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/audio/transcriptions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            },
+            {
+              "name": "model",
+              "value": "whisper-large-v3-turbo"
+            },
+            {
+              "name": "language",
+              "value": "pt"
+            },
+            {
+              "name": "response_format",
+              "value": "verbose_json"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "5b23e2b9-80c5-4fc7-9962-ba21b2a24f23",
+      "name": "Transcrever (Groq Whisper)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        928,
+        208
+      ],
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "CONFIGURAR",
+          "name": "Bearer Auth account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const resp = $input.first().json;\nconst arq = $('Novo vídeo na pasta Treinamentos').first().json;\nconst segs = Array.isArray(resp.segments) ? resp.segments : [];\nif (!segs.length && !(resp.text || '').trim()) { throw new Error('Transcrição vazia: o áudio não tem fala reconhecível'); }\nconst nome = (arq.name || 'treinamento').replace(/\\.[^.]+$/, '');\nconst ferramenta = nome.split(/\\s+-\\s+|_/)[0].trim();\nconst data = (arq.createdTime || new Date().toISOString()).slice(0, 10);\nconst fmt = (s) => { const m = Math.floor(s / 60); const r = Math.floor(s % 60); return m + ':' + String(r).padStart(2, '0'); };\nconst LIMITE = 800;\nconst trechos = [];\nlet atual = null;\nfor (const s of segs) {\n  const t = (s.text || '').trim();\n  if (!t) continue;\n  if (!atual) atual = { inicio: s.start || 0, texto: '' };\n  atual.texto += (atual.texto ? ' ' : '') + t;\n  if (atual.texto.length >= LIMITE) { trechos.push(atual); atual = null; }\n}\nif (atual) trechos.push(atual);\nif (!trechos.length) trechos.push({ inicio: 0, texto: (resp.text || '').trim() });\nreturn trechos.map((t) => ({ json: { texto: t.texto, minuto: fmt(t.inicio), treinamento: nome, ferramenta, arquivo: arq.name, link: arq.webViewLink || '', data } }));"
+      },
+      "id": "a22ce507-4880-43aa-917d-6c2b554710f6",
+      "name": "Montar trechos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1136,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "insert",
+        "memoryKey": {
+          "__rl": true,
+          "mode": "id",
+          "value": "treinamentos"
+        }
+      },
+      "id": "0cf28afb-d8b2-4251-b65e-2d51da1eefaf",
+      "name": "Indexar no vector store",
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreInMemory",
+      "typeVersion": 1.4,
+      "position": [
+        1424,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "99191f0f-b148-48c6-971f-1abd97a5b4b9",
+      "name": "Embeddings (OpenRouter)",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        1424,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "jsonMode": "expressionData",
+        "jsonData": "={{ $json.texto }}",
+        "options": {
+          "metadata": {
+            "metadataValues": [
+              {
+                "name": "treinamento",
+                "value": "={{ $json.treinamento }}"
+              },
+              {
+                "name": "ferramenta",
+                "value": "={{ $json.ferramenta }}"
+              },
+              {
+                "name": "minuto",
+                "value": "={{ $json.minuto }}"
+              },
+              {
+                "name": "arquivo",
+                "value": "={{ $json.arquivo }}"
+              },
+              {
+                "name": "link",
+                "value": "={{ $json.link }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "3a0972d1-043b-4a90-bf2b-62c65d5afa6d",
+      "name": "Trecho do treinamento",
+      "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+      "typeVersion": 1.1,
+      "position": [
+        1584,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "ID_DA_PLANILHA"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Treinamentos"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Data": "={{ $('Montar trechos').first().json.data }}",
+            "Arquivo": "={{ $('Montar trechos').first().json.arquivo }}",
+            "Ferramenta": "={{ $('Montar trechos').first().json.ferramenta }}",
+            "Trechos": "={{ $('Montar trechos').all().length }}",
+            "Link": "={{ $('Montar trechos').first().json.link }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Data",
+              "displayName": "Data",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Arquivo",
+              "displayName": "Arquivo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Ferramenta",
+              "displayName": "Ferramenta",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Trechos",
+              "displayName": "Trechos",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Link",
+              "displayName": "Link",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "8d90d8cf-b33d-4b9e-a82a-d1b61c474497",
+      "name": "Registrar treinamento no Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1696,
+        208
+      ],
+      "executeOnce": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "CONFIGURAR",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "ID_DA_PLANILHA"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Logs"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Data": "={{ $now.toISO() }}",
+            "Fluxo": "Ingestão de treinamentos",
+            "No": "Arquivo até 25 MB?",
+            "Erro": "={{ 'Arquivo ' + $json.name + ' tem ' + Math.round(Number($json.size) / 1048576) + ' MB e passa do limite de 25 MB do Whisper. Exporte só o áudio ou comprima o vídeo.' }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Data",
+              "displayName": "Data",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Fluxo",
+              "displayName": "Fluxo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "No",
+              "displayName": "No",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Erro",
+              "displayName": "Erro",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "56863c16-9d37-447c-b5cf-c241ec31cc6e",
+      "name": "Registrar arquivo grande no Logs",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        704,
+        448
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "CONFIGURAR",
+          "name": "Google Sheets account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Novo vídeo na pasta Treinamentos": {
+      "main": [
+        [
+          {
+            "node": "Arquivo até 25 MB?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Arquivo até 25 MB?": {
+      "main": [
+        [
+          {
+            "node": "Baixar vídeo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Registrar arquivo grande no Logs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Baixar vídeo": {
+      "main": [
+        [
+          {
+            "node": "Transcrever (Groq Whisper)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcrever (Groq Whisper)": {
+      "main": [
+        [
+          {
+            "node": "Montar trechos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar trechos": {
+      "main": [
+        [
+          {
+            "node": "Indexar no vector store",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Indexar no vector store": {
+      "main": [
+        [
+          {
+            "node": "Registrar treinamento no Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings (OpenRouter)": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Indexar no vector store",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trecho do treinamento": {
+      "ai_document": [
+        [
+          {
+            "node": "Indexar no vector store",
+            "type": "ai_document",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

@@ -1,0 +1,627 @@
+{
+  "name": "Resumo automatico de atas de reuniao",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "triggerOn": "specificFolder",
+        "folderToWatch": {
+          "__rl": true,
+          "value": "1ds6nLegTd_7w5g682_lVEzdlxu6IBbOo",
+          "mode": "id"
+        },
+        "event": "fileCreated",
+        "options": {}
+      },
+      "id": "n1",
+      "name": "Novo arquivo na pasta Atas",
+      "type": "n8n-nodes-base.googleDriveTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        300
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "CONFIGURAR",
+          "name": "Google Drive"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.id }}",
+          "mode": "id"
+        },
+        "options": {
+          "googleFileConversion": {
+            "conversion": {
+              "docsToFormat": "text/plain"
+            }
+          }
+        }
+      },
+      "id": "n2",
+      "name": "Baixar arquivo",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        240,
+        300
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "CONFIGURAR",
+          "name": "Google Drive"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "text",
+        "options": {}
+      },
+      "id": "n3",
+      "name": "Extrair texto",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        480,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const entrada = $input.first().json;\nconst texto = (entrada.data || '').toString().trim();\nif (!texto) {\n  throw new Error('Arquivo vazio ou sem texto extraível');\n}\nlet trigger = {};\ntry { trigger = $('Novo arquivo na pasta Atas').first().json; } catch (e) {}\nconst nomeArquivo = entrada.name || trigger.name || 'sem-nome';\nconst dataReuniao = (entrada.createdTime || trigger.createdTime || new Date().toISOString()).slice(0, 10);\n\nconst system = [\n  'Você é um secretário executivo especializado em atas de reunião corporativas.',\n  'Sua tarefa é ler a ata ou transcrição recebida e extrair informações estruturadas.',\n  'Regras:',\n  '1. Responda em português do Brasil.',\n  '2. Responda SOMENTE com um objeto JSON válido, sem texto antes ou depois e sem blocos de markdown.',\n  '3. Use exatamente o esquema informado.',\n  '4. Não invente informações. Se responsável, prazo ou prioridade não estiverem explícitos, use \"não informado\".',\n  '5. \"resumo\" tem no máximo 5 frases objetivas.',\n  '6. \"decisoes\" lista apenas o que foi efetivamente decidido, não o que foi apenas discutido.',\n  '7. \"tarefas\" lista cada ação com um único responsável. Se houver mais de um, crie uma tarefa por pessoa.',\n  '8. \"prioridade\" aceita apenas: \"alta\", \"média\", \"baixa\" ou \"não informado\".',\n  '9. \"prazo\" no formato AAAA-MM-DD quando a data puder ser determinada a partir da data da reunião (' + dataReuniao + '); caso contrário \"não informado\".',\n  '10. Se o texto não for uma ata ou estiver vazio, retorne \"tarefas\": [], \"decisoes\": [] e explique em \"resumo\".',\n  'Esquema: {\"titulo\": string, \"resumo\": string, \"decisoes\": [string], \"tarefas\": [{\"descricao\": string, \"responsavel\": string, \"prazo\": string, \"prioridade\": string}], \"riscos\": [string]}'\n].join('\\n');\n\nconst usuario = 'Arquivo: ' + nomeArquivo + '\\nData da reunião: ' + dataReuniao + '\\n\\nAta:\\n\"\"\"\\n' + texto + '\\n\"\"\"';\n\nreturn [{ json: {\n  nomeArquivo,\n  dataReuniao,\n  body: {\n    models: ['google/gemma-4-31b-it:free', 'nvidia/nemotron-3-ultra-550b-a55b:free', 'google/gemma-4-26b-a4b-it:free'],\n    messages: [{ role: 'system', content: system }, { role: 'user', content: usuario }],\n    temperature: 0.2,\n    response_format: { type: 'json_object' }\n  }\n} }];"
+      },
+      "id": "n4",
+      "name": "Montar prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {}
+      },
+      "id": "n5",
+      "name": "LLM (OpenRouter)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        300
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "orKeyCred00001",
+          "name": "OpenRouter API Key (header Authorization)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const meta = $('Montar prompt').first().json;\nconst resp = $input.first().json;\nconst bruto = resp?.choices?.[0]?.message?.content;\nif (!bruto) throw new Error('Resposta do LLM sem texto: ' + JSON.stringify(resp).slice(0, 300));\n\nlet r;\ntry {\n  r = JSON.parse(bruto.replace(/^```json\\s*|```$/g, '').trim());\n} catch (e) {\n  throw new Error('JSON inválido retornado pelo modelo: ' + bruto.slice(0, 300));\n}\nfor (const campo of ['titulo', 'resumo', 'decisoes', 'tarefas']) {\n  if (!(campo in r)) throw new Error('Campo obrigatório ausente: ' + campo);\n}\nr.riscos = r.riscos || [];\n\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst li = (arr) => arr.length ? '<ul>' + arr.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul>' : '<p>Nenhum item.</p>';\nconst linhas = r.tarefas.map(t => '<tr><td>' + esc(t.descricao) + '</td><td>' + esc(t.responsavel) + '</td><td>' + esc(t.prazo) + '</td><td>' + esc(t.prioridade) + '</td></tr>').join('');\nconst tabela = r.tarefas.length\n  ? '<table border=\"1\" cellpadding=\"6\" cellspacing=\"0\" style=\"border-collapse:collapse\"><tr><th>Tarefa</th><th>Responsável</th><th>Prazo</th><th>Prioridade</th></tr>' + linhas + '</table>'\n  : '<p>Nenhuma tarefa identificada.</p>';\n\nconst html = '<h2>' + esc(r.titulo) + '</h2>'\n  + '<p><b>Arquivo:</b> ' + esc(meta.nomeArquivo) + ' | <b>Data:</b> ' + esc(meta.dataReuniao) + '</p>'\n  + '<h3>Resumo</h3><p>' + esc(r.resumo) + '</p>'\n  + '<h3>Decisões</h3>' + li(r.decisoes)\n  + '<h3>Tarefas</h3>' + tabela\n  + '<h3>Riscos</h3>' + li(r.riscos);\n\nconst ataTexto = [\n  'ATA DE REUNIÃO',\n  r.titulo,\n  'Origem: ' + meta.nomeArquivo + ' | Data: ' + meta.dataReuniao,\n  '',\n  'RESUMO',\n  r.resumo,\n  '',\n  'DECISÕES',\n  ...r.decisoes.map(d => '- ' + d),\n  '',\n  'TAREFAS',\n  ...r.tarefas.map(t => '- ' + t.descricao + ' | Responsável: ' + t.responsavel + ' | Prazo: ' + t.prazo + ' | Prioridade: ' + t.prioridade),\n  '',\n  'RISCOS',\n  ...r.riscos.map(x => '- ' + x)\n].join('\\n');\n\nreturn [{ json: { ...r, nomeArquivo: meta.nomeArquivo, dataReuniao: meta.dataReuniao, modeloUsado: resp.model, html, ataTexto } }];"
+      },
+      "id": "n6",
+      "name": "Validar JSON e montar e-mail",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "euvasconcelosuai@gmail.com",
+        "subject": "={{ 'Resumo da reunião: ' + $json.titulo }}",
+        "emailType": "html",
+        "message": "={{ $json.html }}",
+        "options": {}
+      },
+      "id": "n7",
+      "name": "Enviar e-mail",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1440,
+        200
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "CONFIGURAR",
+          "name": "Gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "tarefas",
+        "include": "selectedOtherFields",
+        "fieldsToInclude": "titulo,nomeArquivo,dataReuniao",
+        "options": {}
+      },
+      "id": "n8",
+      "name": "Separar tarefas",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        1440,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1xwvCn-pRv7pEW3k8ueYF8r_AGIldwBmjitblFW1Qcr8",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Tarefas",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Data": "={{ $json.dataReuniao }}",
+            "Reuniao": "={{ $json.titulo }}",
+            "Arquivo": "={{ $json.nomeArquivo }}",
+            "Tarefa": "={{ $json.tarefas?.descricao ?? $json.descricao }}",
+            "Responsavel": "={{ $json.tarefas?.responsavel ?? $json.responsavel }}",
+            "Prazo": "={{ $json.tarefas?.prazo ?? $json.prazo }}",
+            "Prioridade": "={{ $json.tarefas?.prioridade ?? $json.prioridade }}",
+            "Status": "Pendente"
+          },
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "n9",
+      "name": "Registrar tarefas no Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1680,
+        400
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "CONFIGURAR",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "n10",
+      "name": "Erro no fluxo",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1xwvCn-pRv7pEW3k8ueYF8r_AGIldwBmjitblFW1Qcr8",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Logs",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Data": "={{ $now.toISO() }}",
+            "Fluxo": "={{ $json.workflow.name }}",
+            "No": "={{ $json.execution.lastNodeExecuted }}",
+            "Erro": "={{ $json.execution.error.message }}"
+          },
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "n11",
+      "name": "Registrar erro no Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        240,
+        640
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "CONFIGURAR",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "id": "g1",
+      "name": "A cada 15 minutos",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://graph.microsoft.com/v1.0/me",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "microsoftOAuth2Api",
+        "options": {}
+      },
+      "id": "g2",
+      "name": "Obter usuário (Graph)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        640
+      ],
+      "credentials": {
+        "microsoftOAuth2Api": {
+          "id": "CONFIGURAR",
+          "name": "Microsoft Teams (Graph)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ \"https://graph.microsoft.com/v1.0/me/onlineMeetings/getAllTranscripts(meetingOrganizerUserId='\" + $json.id + \"')\" }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "microsoftOAuth2Api",
+        "options": {}
+      },
+      "id": "g3",
+      "name": "Listar transcrições (Graph)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        640
+      ],
+      "credentials": {
+        "microsoftOAuth2Api": {
+          "id": "CONFIGURAR",
+          "name": "Microsoft Teams (Graph)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const resp = $input.first().json;\nconst lista = resp.value || [];\nconst estado = $getWorkflowStaticData('global');\nconst desde = estado.ultimaTranscricao || new Date(Date.now() - 24 * 3600 * 1000).toISOString();\nconst novas = lista\n  .filter(t => t.createdDateTime > desde)\n  .sort((a, b) => a.createdDateTime.localeCompare(b.createdDateTime));\nif (novas.length) estado.ultimaTranscricao = novas[novas.length - 1].createdDateTime;\nreturn novas.map(t => ({ json: { id: t.id, meetingId: t.meetingId, createdDateTime: t.createdDateTime } }));"
+      },
+      "id": "g4",
+      "name": "Filtrar novas transcrições",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ \"https://graph.microsoft.com/v1.0/me/onlineMeetings/\" + $json.meetingId + \"/transcripts/\" + $json.id + \"/content?$format=text/vtt\" }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "microsoftOAuth2Api",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text",
+              "outputPropertyName": "data"
+            }
+          }
+        }
+      },
+      "id": "g5",
+      "name": "Buscar conteúdo VTT",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        640
+      ],
+      "credentials": {
+        "microsoftOAuth2Api": {
+          "id": "CONFIGURAR",
+          "name": "Microsoft Teams (Graph)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ \"https://graph.microsoft.com/v1.0/me/onlineMeetings/\" + $('Filtrar novas transcrições').item.json.meetingId }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "microsoftOAuth2Api",
+        "options": {}
+      },
+      "id": "g6",
+      "name": "Buscar reunião (Graph)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        640
+      ],
+      "credentials": {
+        "microsoftOAuth2Api": {
+          "id": "CONFIGURAR",
+          "name": "Microsoft Teams (Graph)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const vtt = ($('Buscar conteúdo VTT').item.json.data || '').toString();\nconst reuniao = $input.item.json;\nconst meta = $('Filtrar novas transcrições').item.json;\nconst linhas = [];\nfor (const l of vtt.split(/\\r?\\n/)) {\n  const t = l.trim();\n  if (!t || t === 'WEBVTT' || /^\\d+$/.test(t) || /-->/.test(t) || /^NOTE/.test(t)) continue;\n  const m = t.match(/^<v ([^>]+)>(.*?)(<\\/v>)?$/);\n  linhas.push(m ? m[1] + ': ' + m[2].trim() : t.replace(/<[^>]+>/g, ''));\n}\nreturn { json: { data: linhas.join('\\n'), name: reuniao.subject || 'Reunião Teams', createdTime: meta.createdDateTime } };"
+      },
+      "id": "g7",
+      "name": "Converter VTT em texto",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "createFromText",
+        "content": "={{ $json.ataTexto }}",
+        "name": "={{ 'Ata - ' + $json.titulo + ' - ' + $json.dataReuniao }}",
+        "folderId": {
+          "__rl": true,
+          "value": "1P6M6xWe1_zSFkLLVBZjaonaVOz5ttiSm",
+          "mode": "id"
+        },
+        "options": {
+          "convertToGoogleDocument": true
+        }
+      },
+      "id": "g8",
+      "name": "Salvar ata na pasta Atas",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        1440,
+        0
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "CONFIGURAR",
+          "name": "Google Drive"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Novo arquivo na pasta Atas": {
+      "main": [
+        [
+          {
+            "node": "Baixar arquivo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Baixar arquivo": {
+      "main": [
+        [
+          {
+            "node": "Extrair texto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extrair texto": {
+      "main": [
+        [
+          {
+            "node": "Montar prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar prompt": {
+      "main": [
+        [
+          {
+            "node": "LLM (OpenRouter)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM (OpenRouter)": {
+      "main": [
+        [
+          {
+            "node": "Validar JSON e montar e-mail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar JSON e montar e-mail": {
+      "main": [
+        [
+          {
+            "node": "Enviar e-mail",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Separar tarefas",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Salvar ata na pasta Atas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Separar tarefas": {
+      "main": [
+        [
+          {
+            "node": "Registrar tarefas no Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Erro no fluxo": {
+      "main": [
+        [
+          {
+            "node": "Registrar erro no Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "A cada 15 minutos": {
+      "main": [
+        [
+          {
+            "node": "Obter usuário (Graph)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obter usuário (Graph)": {
+      "main": [
+        [
+          {
+            "node": "Listar transcrições (Graph)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Listar transcrições (Graph)": {
+      "main": [
+        [
+          {
+            "node": "Filtrar novas transcrições",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtrar novas transcrições": {
+      "main": [
+        [
+          {
+            "node": "Buscar conteúdo VTT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar conteúdo VTT": {
+      "main": [
+        [
+          {
+            "node": "Buscar reunião (Graph)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar reunião (Graph)": {
+      "main": [
+        [
+          {
+            "node": "Converter VTT em texto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Converter VTT em texto": {
+      "main": [
+        [
+          {
+            "node": "Montar prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false
+}

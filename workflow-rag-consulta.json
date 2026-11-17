@@ -1,0 +1,197 @@
+{
+  "name": "RAG de treinamentos: consulta",
+  "nodes": [
+    {
+      "parameters": {
+        "public": true,
+        "initialMessages": "Olá. Pergunte sobre qualquer treinamento de ferramenta já gravado. Respondo com base nos vídeos e indico o treinamento e o minuto.",
+        "options": {}
+      },
+      "id": "30972bc6-d0f8-46c9-ba6e-d42d7500e25c",
+      "name": "Chat de treinamentos",
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.5,
+      "position": [
+        240,
+        304
+      ],
+      "webhookId": "b7ff10bb-ae7a-4859-b822-7a7b4f69a4b1"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.chatInput }}",
+        "options": {
+          "systemMessage": "Você é o assistente de treinamentos da empresa. Responda em português do Brasil, de forma objetiva.\n\nRegras:\n1. Antes de responder, sempre use a ferramenta \"Buscar nos treinamentos\".\n2. Responda somente com base nos trechos recuperados. Não use conhecimento externo e não invente passos, telas, botões ou configurações.\n3. Se os trechos não trouxerem a resposta, diga exatamente: \"Não encontrei isso nos treinamentos gravados.\" e sugira procurar o responsável pela ferramenta.\n4. Quando a pergunta for sobre um procedimento, responda em passos numerados.\n5. Ao final, cite a fonte no formato: Fonte: <treinamento>, minuto <minuto>. Se houver mais de um trecho, liste cada um. Inclua o link do vídeo quando existir nos metadados.\n6. Se a pergunta for ambígua e houver treinamentos de ferramentas diferentes nos trechos, pergunte qual ferramenta o usuário quer antes de responder."
+        },
+        "needsFallback": true
+      },
+      "id": "a9be90aa-e87e-494f-8bba-4d827ba5fcb9",
+      "name": "Agente de treinamentos",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        560,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "model": "google/gemma-4-31b-it:free",
+        "options": {
+          "temperature": 0.2
+        }
+      },
+      "id": "973a5e48-3716-4ae1-80ad-8e53d118f7a6",
+      "name": "Modelo (OpenRouter)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        448,
+        528
+      ],
+      "credentials": {
+        "openRouterApi": {
+          "id": "CONFIGURAR",
+          "name": "OpenRouter account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "07c5b5fc-314a-44d3-813e-3baf1de59e37",
+      "name": "Memória da conversa",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.4,
+      "position": [
+        608,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "retrieve-as-tool",
+        "toolDescription": "Busca trechos de treinamentos de ferramentas gravados em vídeo. Use sempre antes de responder qualquer pergunta sobre como usar uma ferramenta, processo ou procedimento. Cada trecho traz treinamento, ferramenta e minuto nos metadados.",
+        "memoryKey": {
+          "__rl": true,
+          "mode": "id",
+          "value": "treinamentos"
+        }
+      },
+      "id": "b87daf5e-f012-4887-a43b-a92a9b73c7c3",
+      "name": "Buscar nos treinamentos",
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreInMemory",
+      "typeVersion": 1.4,
+      "position": [
+        784,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "51e62b83-a64c-4edb-8e31-f78fbf5ec3de",
+      "name": "Embeddings (OpenRouter)",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        896,
+        704
+      ]
+    },
+    {
+      "id": "0b8d6a02-8ab8-4478-81df-a8c9dda6610d",
+      "name": "Modelo reserva (OpenRouter)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        440,
+        700
+      ],
+      "parameters": {
+        "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+        "options": {
+          "temperature": 0.2
+        }
+      },
+      "credentials": {
+        "openRouterApi": {
+          "id": "CONFIGURAR",
+          "name": "OpenRouter account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Chat de treinamentos": {
+      "main": [
+        [
+          {
+            "node": "Agente de treinamentos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Modelo (OpenRouter)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Agente de treinamentos",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Memória da conversa": {
+      "ai_memory": [
+        [
+          {
+            "node": "Agente de treinamentos",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar nos treinamentos": {
+      "ai_tool": [
+        [
+          {
+            "node": "Agente de treinamentos",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings (OpenRouter)": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Buscar nos treinamentos",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Modelo reserva (OpenRouter)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Agente de treinamentos",
+            "type": "ai_languageModel",
+            "index": 1
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

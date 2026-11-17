@@ -1,0 +1,18 @@
+Ata de reunião comercial
+Data: 10/11/2026
+Participantes: Ana (gerente comercial), Bruno (analista de dados), Carla (design de produto), Diego (TI)
+
+Pauta: desempenho de vendas online em outubro e plano de ação.
+
+Ana apresentou os números de outubro: queda de 8% nas vendas online em relação a setembro, com aumento de 12% no custo de aquisição. Bruno explicou que a campanha de cupons trouxe volume, mas com margem baixa.
+
+Decidiu-se pausar a campanha de cupons até que os custos sejam revisados. Decidiu-se também manter o investimento em anúncios de busca no patamar atual.
+
+Ações:
+- Bruno vai levantar o custo por aquisição por canal até sexta-feira, 13/11. Prioridade alta.
+- Carla fica responsável por propor um novo layout da página de checkout. Sem data definida.
+- Diego deve confirmar com o fornecedor o prazo da integração com o gateway de pagamento até 17/11.
+
+Riscos: possível atraso na integração com o gateway de pagamento, o que pode atrasar o novo checkout.
+
+Próxima reunião: 24/11/2026.
